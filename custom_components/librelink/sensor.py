@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import time
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_UNIT_OF_MEASUREMENT
 from homeassistant.core import HomeAssistant
@@ -51,41 +51,20 @@ async def async_setup_entry(
     # using an index as we need to keep the coordinator in the @property to get updates from coordinator
     # we create an array of entities then create entities.
 
-    sensors = []
-    for index, patients in enumerate(coordinator.data):
-
-        sensors.extend(
-            [
-                LibreLinkSensor(
-                    coordinator,
-                    index,
-                    "value",  # key
-                    "Glucose Measurement",  # name
-                    custom_unit,
-                ),
-                LibreLinkSensor(
-                    coordinator,
-                    index,
-                    "trend",  # key
-                    "Trend",  # name
-                    custom_unit,
-                ),
-                LibreLinkSensor(
-                    coordinator,
-                    index,
-                    "sensor",  # key
-                    "Active Sensor",  # name
-                    "days",  # uom
-                ),
-                LibreLinkSensor(
-                    coordinator,
-                    index,
-                    "delay",  # key
-                    "Minutes since update",  # name
-                    "min",  # uom
-                ),
-            ]
-        )
+    sensors = [
+        sensor
+        for index, _ in enumerate(coordinator.data)
+        for sensor in [
+            (
+                MeasurementMGDLSensor(coordinator, index)
+                if custom_unit == MG_DL
+                else MeasurementMMOLSensor(coordinator, index)
+            ),
+            TrendSensor(coordinator, index),
+            ApplicationTimestampSensor(coordinator, index),
+            LastMeasurementTimestampSensor(coordinator, index),
+        ]
+    ]
 
     async_add_entities(sensors)
 
@@ -96,150 +75,146 @@ class LibreLinkSensor(LibreLinkDevice, SensorEntity):
     def __init__(
         self,
         coordinator: LibreLinkDataUpdateCoordinator,
-        index,
-        key: str,
-        name: str,
-        uom,
+        coordinator_data_index,
     ) -> None:
         """Initialize the device class."""
-        super().__init__(coordinator, index)
-        self.uom = uom
-        self.patients = (
-            self.coordinator.data[index]["firstName"]
-            + " "
-            + self.coordinator.data[index]["lastName"]
-        )
-        self.patientId = self.coordinator.data[index]["patientId"]
-        self._attr_unique_id = f"{self.coordinator.data[index]['patientId']}_{key}"
-        self._attr_name = name
-        self.index = index
-        self.key = key
+        super().__init__(coordinator, coordinator_data_index)
 
-        # res = None
-#         for i, patient in enumerate(self.coordinator.data):
-# #        for i in range(len(patients)):
-#             if patient.get("patientId") == "e4a78e05-0780-11ec-ad7d-0242ac110005":
-#                 res = i
-#                 break
+        self.coordinator_data_index = coordinator_data_index
 
-#         _LOGGER.debug(
-#             "index : %s",
-#             res,
-#         )
+        self.patient = f'{self._c_data["firstName"]} {self._c_data["lastName"]}'
+        self.patientId = self._c_data["patientId"]
 
     @property
-    def native_value(self):
-        """Return the native value of the sensor."""
+    def _c_data(self):
+        return self.coordinator.data[self.coordinator_data_index]
 
-        result = None
-
-        if self.patients:
-            if self.key == "value":
-                if self.uom == MG_DL:
-                    result = int(
-                        self.coordinator.data[self.index]["glucoseMeasurement"][
-                            "ValueInMgPerDl"
-                        ]
-                    )
-                if self.uom == MMOL_L:
-                    result = round(
-                        float(
-                            self.coordinator.data[self.index][
-                                "glucoseMeasurement"
-                            ]["ValueInMgPerDl"]
-                            / MMOL_DL_TO_MG_DL
-                        ),
-                        1,
-                    )
-
-            elif self.key == "trend":
-                result = GLUCOSE_TREND_MESSAGE[
-                    (
-                        self.coordinator.data[self.index]["glucoseMeasurement"][
-                            "TrendArrow"
-                        ]
-                    )
-                    - 1
-                ]
-
-            elif self.key == "sensor":
-               if self.coordinator.data[self.index]["sensor"] != None:
-                    result = int(
-                        (
-                            time.time()
-                            - (self.coordinator.data[self.index]["sensor"]["a"])
-                        )
-                        / 86400
-                    )
-               else:
-                   result = "N/A"
-
-            elif self.key == "delay":
-                result = int(
-                    (
-                        datetime.now()
-                        - datetime.strptime(
-                            self.coordinator.data[self.index][
-                                "glucoseMeasurement"
-                            ]["Timestamp"],
-                            "%m/%d/%Y %I:%M:%S %p",
-                        )
-                    ).total_seconds()
-                    / 60  # convert seconds in minutes
-                )
-
-            return result
-        return None
+    @property
+    def unique_id(self):
+        return f"{self.patientId} {self.name}".replace(" ", "_").lower()
 
     @property
     def icon(self):
         """Return the icon for the frontend."""
-
-        if self.coordinator.data[self.index]["glucoseMeasurement"]["TrendArrow"]:
-            if self.key in ["value", "trend"]:
-                return GLUCOSE_TREND_ICON[
-                    (
-                        self.coordinator.data[self.index]["glucoseMeasurement"][
-                            "TrendArrow"
-                        ]
-                    )
-                    - 1
-                ]
         return GLUCOSE_VALUE_ICON
+
+
+class TrendSensor(LibreLinkSensor):
+    """Glucose Trend Sensor class."""
+
+    @property
+    def name(self):
+        return "Trend"
+
+    @property
+    def native_value(self):
+        return GLUCOSE_TREND_MESSAGE[
+            (self._c_data["glucoseMeasurement"]["TrendArrow"]) - 1
+        ]
+
+    @property
+    def icon(self):
+        """Return the icon for the frontend."""
+        return GLUCOSE_TREND_ICON[
+            (self._c_data["glucoseMeasurement"]["TrendArrow"]) - 1
+        ]
+
+
+class MeasurementSensor(TrendSensor, LibreLinkSensor):
+    """Glucose Measurement Sensor class."""
+
+    @property
+    def name(self):
+        return "Measurement"
+
+    @property
+    def native_value(self):
+        """Return the native value of the sensor."""
+        return self._c_data["glucoseMeasurement"]["ValueInMgPerDl"]
+
+
+class MeasurementMGDLSensor(MeasurementSensor):
+    """Glucose Measurement Sensor class."""
+
+    @property
+    def suggested_display_precision(self):
+        """Return the suggested precision of the sensor."""
+        return 0
 
     @property
     def unit_of_measurement(self):
-        """Only used for glucose measurement and librelink sensor delay since update."""
+        """Return the unit of measurement of the sensor."""
+        return MG_DL
 
-        if self.coordinator.data[self.index]:
-            if self.key in ["sensor", "value"]:
-                return self.uom
-        return None
+
+class MeasurementMMOLSensor(MeasurementSensor):
+    """Glucose Measurement Sensor class."""
+
+    @property
+    def suggested_display_precision(self):
+        """Return the suggested precision of the sensor."""
+        return 1
+
+    @property
+    def native_value(self):
+        """Return the native value of the sensor."""
+        return super().native_value / MMOL_DL_TO_MG_DL
+
+    @property
+    def unit_of_measurement(self):
+        """Return the unit of measurement of the sensor."""
+        return MMOL_L
+
+
+class TimestampSensor(LibreLinkSensor):
+    @property
+    def device_class(self):
+        return SensorDeviceClass.TIMESTAMP
+
+
+class ApplicationTimestampSensor(TimestampSensor):
+    """Sensor Days Sensor class."""
+
+    @property
+    def name(self):
+        return "Application Timestamp"
+
+    @property
+    def available(self):
+        """Return if the sensor data are available."""
+        return self._c_data["sensor"]["a"] != None
+
+    @property
+    def native_value(self):
+        """Return the native value of the sensor."""
+        return datetime.fromtimestamp(self._c_data["sensor"]["a"], tz=timezone.utc)
 
     @property
     def extra_state_attributes(self):
         """Return the state attributes of the librelink sensor."""
-        result = None
-        if self.coordinator.data[self.index]:
-            if self.key == "sensor":
-                if self.coordinator.data[self.index]["sensor"] != None:
-                    result = {
-                        "Serial number": f"{self.coordinator.data[self.index]['sensor']['pt']} {self.coordinator.data[self.index]['sensor']['sn']}",
-                        "Activation date": datetime.fromtimestamp(
-                            (self.coordinator.data[self.index]["sensor"]["a"])
-                        ),
-                        "patientId": self.coordinator.data[self.index]["patientId"],
-                        "Patient": f"{(self.coordinator.data[self.index]['lastName']).upper()} {self.coordinator.data[self.index]['firstName']}",
-                }
-                else:
-                    result = {
-                        "Serial number": "N/A",
-                        "Activation date": "N/A",
-                        "patientId": self.coordinator.data[self.index]["patientId"],
-                        "Patient": f"{(self.coordinator.data[self.index]['lastName']).upper()} {self.coordinator.data[self.index]['firstName']}",
-                }
+        attrs = {
+            "patientId": self.patientId,
+            "Patient": self.patient,
+        }
+        if self.available:
+            attrs |= {
+                "Serial number": f"{self._c_data['sensor']['pt']} {self._c_data['sensor']['sn']}",
+                "Activation date": self.native_value,
+            }
+
+        return attrs
 
 
+class LastMeasurementTimestampSensor(TimestampSensor):
+    """Sensor Delay Sensor class."""
 
-            return result
-        return result
+    @property
+    def name(self):
+        return "Last Measurement Timestamp"
+
+    @property
+    def native_value(self):
+        """Return the native value of the sensor."""
+        return datetime.strptime(
+            self._c_data["glucoseMeasurement"]["Timestamp"], "%m/%d/%Y %I:%M:%S %p"
+        )
