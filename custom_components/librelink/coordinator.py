@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 from datetime import timedelta
-import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .api import LibreLinkApiAuthenticationError, LibreLinkApiClient, LibreLinkApiError
+from .api import LibreLinkAPI
 from .const import DOMAIN, LOGGER, REFRESH_RATE_MIN
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class LibreLinkDataUpdateCoordinator(DataUpdateCoordinator):
@@ -24,11 +20,10 @@ class LibreLinkDataUpdateCoordinator(DataUpdateCoordinator):
     def __init__(
         self,
         hass: HomeAssistant,
-        client: LibreLinkApiClient,
+        api: LibreLinkAPI,
     ) -> None:
         """Initialize."""
-        self.client = client
-        self.api: LibreLinkApiClient = client
+        self.api: LibreLinkAPI = api
 
         super().__init__(
             hass=hass,
@@ -39,11 +34,4 @@ class LibreLinkDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self):
         """Update data via library."""
-        try:
-            return await self.client.async_get_data()
-        except LibreLinkApiAuthenticationError as exception:
-            _LOGGER.debug("Exception: authentication error during coordinator update")
-            raise ConfigEntryAuthFailed(exception) from exception
-        except LibreLinkApiError as exception:
-            _LOGGER.debug("Exception: general API error during coordinator update")
-            raise UpdateFailed(exception) from exception
+        return await self.api.async_get_data()

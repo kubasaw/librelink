@@ -39,7 +39,6 @@ BASE_URL_LIST = {
 }
 PRODUCT = "llu.android"
 VERSION_APP = "4.7"
-APPLICATION = "application/json"
 GLUCOSE_VALUE_ICON = "mdi:diabetes"
 GLUCOSE_TREND_ICON = [
     "mdi:arrow-down-bold-box",

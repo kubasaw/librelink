@@ -8,14 +8,14 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.const import CONF_PASSWORD, CONF_UNIT_OF_MEASUREMENT, CONF_USERNAME
-from homeassistant.helpers import config_validation as cv, selector
+from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 
 from .api import (
-    LibreLinkApiAuthenticationError,
-    LibreLinkApiCommunicationError,
-    LibreLinkApiError,
-    LibreLinkApiLogin,
+    LibreLinkAPI,
+    LibreLinkAPIAuthenticationError,
+    LibreLinkAPIConnectionError,
+    LibreLinkAPIError,
 )
 from .const import BASE_URL_LIST, COUNTRY, COUNTRY_LIST, DOMAIN, LOGGER, MG_DL, MMOL_L
 
@@ -41,14 +41,14 @@ class LibreLinkFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     password=user_input[CONF_PASSWORD],
                     base_url=BASE_URL_LIST.get(user_input[COUNTRY]),
                 )
-            except LibreLinkApiAuthenticationError as exception:
-                LOGGER.warning(exception)
+            except LibreLinkAPIAuthenticationError as e:
+                LOGGER.warning(e)
                 _errors["base"] = "auth"
-            except LibreLinkApiCommunicationError as exception:
-                LOGGER.error(exception)
+            except LibreLinkAPIConnectionError as e:
+                LOGGER.error(e)
                 _errors["base"] = "connection"
-            except LibreLinkApiError as exception:
-                LOGGER.exception(exception)
+            except LibreLinkAPIError as e:
+                LOGGER.exception(e)
                 _errors["base"] = "unknown"
             else:
                 return self.async_create_entry(
@@ -91,12 +91,8 @@ class LibreLinkFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         self, username: str, password: str, base_url: str
     ) -> None:
         """Validate credentials."""
-        client = LibreLinkApiLogin(
-            username=username,
-            password=password,
-            base_url=base_url,
-            session=async_create_clientsession(self.hass),
+        client = LibreLinkAPI(
+            base_url=base_url, session=async_create_clientsession(self.hass)
         )
 
-        await client.async_get_token()
-
+        await client.async_login(username, password)

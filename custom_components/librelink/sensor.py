@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
 import logging
-import time
 
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_UNIT_OF_MEASUREMENT
 from homeassistant.core import HomeAssistant
@@ -62,6 +65,7 @@ async def async_setup_entry(
             ),
             TrendSensor(coordinator, index),
             ApplicationTimestampSensor(coordinator, index),
+            ExpirationTimestampSensor(coordinator, index),
             LastMeasurementTimestampSensor(coordinator, index),
         ]
     ]
@@ -69,13 +73,11 @@ async def async_setup_entry(
     async_add_entities(sensors)
 
 
-class LibreLinkSensor(LibreLinkDevice, SensorEntity):
-    """LibreLink Sensor class."""
+class LibreLinkSensorBase(LibreLinkDevice):
+    """LibreLink Sensor base class."""
 
     def __init__(
-        self,
-        coordinator: LibreLinkDataUpdateCoordinator,
-        coordinator_data_index,
+        self, coordinator: LibreLinkDataUpdateCoordinator, coordinator_data_index: int
     ) -> None:
         """Initialize the device class."""
         super().__init__(coordinator, coordinator_data_index)
@@ -92,6 +94,10 @@ class LibreLinkSensor(LibreLinkDevice, SensorEntity):
     @property
     def unique_id(self):
         return f"{self.patientId} {self.name}".replace(" ", "_").lower()
+
+
+class LibreLinkSensor(LibreLinkSensorBase, SensorEntity):
+    """LibreLink Sensor class."""
 
     @property
     def icon(self):
@@ -120,8 +126,12 @@ class TrendSensor(LibreLinkSensor):
         ]
 
 
-class MeasurementSensor(TrendSensor, LibreLinkSensor):
+class MeasurementMGDLSensor(TrendSensor, LibreLinkSensor):
     """Glucose Measurement Sensor class."""
+
+    @property
+    def state_class(self):
+        return SensorStateClass.MEASUREMENT
 
     @property
     def name(self):
@@ -131,10 +141,6 @@ class MeasurementSensor(TrendSensor, LibreLinkSensor):
     def native_value(self):
         """Return the native value of the sensor."""
         return self._c_data["glucoseMeasurement"]["ValueInMgPerDl"]
-
-
-class MeasurementMGDLSensor(MeasurementSensor):
-    """Glucose Measurement Sensor class."""
 
     @property
     def suggested_display_precision(self):
@@ -147,7 +153,7 @@ class MeasurementMGDLSensor(MeasurementSensor):
         return MG_DL
 
 
-class MeasurementMMOLSensor(MeasurementSensor):
+class MeasurementMMOLSensor(MeasurementMGDLSensor):
     """Glucose Measurement Sensor class."""
 
     @property
@@ -167,6 +173,8 @@ class MeasurementMMOLSensor(MeasurementSensor):
 
 
 class TimestampSensor(LibreLinkSensor):
+    """Timestamp Sensor class."""
+
     @property
     def device_class(self):
         return SensorDeviceClass.TIMESTAMP
@@ -182,12 +190,12 @@ class ApplicationTimestampSensor(TimestampSensor):
     @property
     def available(self):
         """Return if the sensor data are available."""
-        return self._c_data["sensor"]["a"] != None
+        return self._c_data["sensor"]["a"] is not None
 
     @property
     def native_value(self):
         """Return the native value of the sensor."""
-        return datetime.fromtimestamp(self._c_data["sensor"]["a"], tz=timezone.utc)
+        return datetime.fromtimestamp(self._c_data["sensor"]["a"], tz=UTC)
 
     @property
     def extra_state_attributes(self):
@@ -199,10 +207,23 @@ class ApplicationTimestampSensor(TimestampSensor):
         if self.available:
             attrs |= {
                 "Serial number": f"{self._c_data['sensor']['pt']} {self._c_data['sensor']['sn']}",
-                "Activation date": self.native_value,
+                "Activation date": ApplicationTimestampSensor.native_value.fget(self),
             }
 
         return attrs
+
+
+class ExpirationTimestampSensor(ApplicationTimestampSensor):
+    """Sensor Days Sensor class."""
+
+    @property
+    def name(self):
+        return "Expiration Timestamp"
+
+    @property
+    def native_value(self):
+        """Return the native value of the sensor."""
+        return super().native_value + timedelta(days=14)
 
 
 class LastMeasurementTimestampSensor(TimestampSensor):
@@ -215,6 +236,8 @@ class LastMeasurementTimestampSensor(TimestampSensor):
     @property
     def native_value(self):
         """Return the native value of the sensor."""
+
         return datetime.strptime(
-            self._c_data["glucoseMeasurement"]["Timestamp"], "%m/%d/%Y %I:%M:%S %p"
-        )
+            self._c_data["glucoseMeasurement"]["FactoryTimestamp"],
+            "%m/%d/%Y %I:%M:%S %p",
+        ).replace(tzinfo=UTC)

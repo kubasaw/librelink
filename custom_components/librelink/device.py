@@ -48,4 +48,3 @@ class LibreLinkDevice(CoordinatorEntity):
             model=VERSION,
             manufacturer=NAME,
         )
-
