@@ -45,6 +45,11 @@ class LibreLinkBinarySensor(LibreLinkSensorBase, BinarySensorEntity):
         """Return the class of this device."""
         return BinarySensorDeviceClass.SAFETY
 
+    @property
+    def _current_glucose(self) -> int:
+        """Return the current glucose value."""
+        return self._c_data["glucoseMeasurement"]["ValueInMgPerDl"]
+
 
 class HighSensor(LibreLinkBinarySensor):
     """High Sensor class."""
@@ -57,7 +62,7 @@ class HighSensor(LibreLinkBinarySensor):
     @property
     def is_on(self) -> bool:
         """Return true if the binary_sensor is on."""
-        return self._c_data["glucoseMeasurement"]["isHigh"]
+        return self._current_glucose >= self._c_data["targetHigh"]
 
 
 class LowSensor(LibreLinkBinarySensor):
@@ -71,4 +76,4 @@ class LowSensor(LibreLinkBinarySensor):
     @property
     def is_on(self) -> bool:
         """Return true if the binary_sensor is on."""
-        return self._c_data["glucoseMeasurement"]["isLow"]
+        return self._current_glucose <= self._c_data["targetLow"]
