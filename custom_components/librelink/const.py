@@ -40,22 +40,20 @@ BASE_URL_LIST = {
 PRODUCT = "llu.android"
 VERSION_APP = "4.7"
 GLUCOSE_VALUE_ICON = "mdi:diabetes"
-GLUCOSE_TREND_ICON = [
-    "mdi:arrow-down-bold-box",
-    "mdi:arrow-bottom-right-bold-box",
-    "mdi:arrow-right-bold-box",
-    "mdi:arrow-top-right-bold-box",
-    "mdi:arrow-up-bold-box",
-]
-GLUCOSE_TREND_MESSAGE = [
-    "Decreasing fast",
-    "Decreasing",
-    "Stable",
-    "Increasing",
-    "Increasing fast",
-]
-MMOL_L = "mmol/L"
-MG_DL = "mg/dL"
-MMOL_DL_TO_MG_DL = 18
+GLUCOSE_TREND_ICON = {
+    1: "mdi:arrow-down-bold-box",
+    2: "mdi:arrow-bottom-right-bold-box",
+    3: "mdi:arrow-right-bold-box",
+    4: "mdi:arrow-top-right-bold-box",
+    5: "mdi:arrow-up-bold-box",
+}
+GLUCOSE_TREND_MESSAGE = {
+    1: "Decreasing fast",
+    2: "Decreasing",
+    3: "Stable",
+    4: "Increasing",
+    5: "Increasing fast",
+}
+
 REFRESH_RATE_MIN = 1
 API_TIME_OUT_SECONDS = 20

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import socket
 
@@ -50,10 +49,13 @@ class LibreLinkAPI:
         if response["status"] != 0:
             return response  # to be used for debugging in status not ok
 
-        patients = sorted(response["data"], key=lambda x: x["patientId"])
+        patients = response["data"]
         _LOGGER.debug(
             "Number of patients : %s and patient list %s", len(patients), patients
         )
+
+        self._token = response["ticket"]["token"]
+
         return patients
 
     async def async_login(self, username: str, password: str) -> str:
@@ -66,6 +68,7 @@ class LibreLinkAPI:
         _LOGGER.debug("Login status : %s", response["status"])
         if response["status"] == 2:
             raise LibreLinkAPIAuthenticationError()
+
         self._token = response["data"]["authTicket"]["token"]
 
     async def _call_api(
@@ -84,15 +87,17 @@ class LibreLinkAPI:
 
         call_method = self._session.post if data else self._session.get
         try:
-            async with asyncio.timeout(API_TIME_OUT_SECONDS):
-                response = await call_method(
-                    url=self.base_url + url, headers=headers, json=data
-                )
-                _LOGGER.debug("response.status: %s", response.status)
-                if response.status in (401, 403):
-                    raise LibreLinkAPIAuthenticationError()
-                response.raise_for_status()
-                return await response.json()
+            response = await call_method(
+                url=self.base_url + url,
+                headers=headers,
+                json=data,
+                timeout=aiohttp.ClientTimeout(total=API_TIME_OUT_SECONDS),
+            )
+            _LOGGER.debug("response.status: %s", response.status)
+            if response.status in (401, 403):
+                raise LibreLinkAPIAuthenticationError()
+            response.raise_for_status()
+            return await response.json()
         except TimeoutError as e:
             raise LibreLinkAPIConnectionError("Timeout Error") from e
         except (aiohttp.ClientError, socket.gaierror) as e:

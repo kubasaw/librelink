@@ -15,17 +15,10 @@ from homeassistant.const import CONF_UNIT_OF_MEASUREMENT
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import (
-    DOMAIN,
-    GLUCOSE_TREND_ICON,
-    GLUCOSE_TREND_MESSAGE,
-    GLUCOSE_VALUE_ICON,
-    MG_DL,
-    MMOL_DL_TO_MG_DL,
-    MMOL_L,
-)
+from .const import DOMAIN, GLUCOSE_TREND_ICON, GLUCOSE_TREND_MESSAGE, GLUCOSE_VALUE_ICON
 from .coordinator import LibreLinkDataUpdateCoordinator
 from .device import LibreLinkDevice
+from .units import UNITS_OF_MEASUREMENT, UnitOfMeasurement
 
 # GVS: Tuto pour ajouter des log
 _LOGGER = logging.getLogger(__name__)
@@ -45,10 +38,7 @@ async def async_setup_entry(
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     # If custom unit of measurement is selectid it is initialized, otherwise MG/DL is used
-    try:
-        custom_unit = config_entry.data[CONF_UNIT_OF_MEASUREMENT]
-    except KeyError:
-        custom_unit = MG_DL
+    unit = UNITS_OF_MEASUREMENT[config_entry.data[CONF_UNIT_OF_MEASUREMENT]]
 
     # For each patients, new Device base on patients and
     # using an index as we need to keep the coordinator in the @property to get updates from coordinator
@@ -58,11 +48,7 @@ async def async_setup_entry(
         sensor
         for index, _ in enumerate(coordinator.data)
         for sensor in [
-            (
-                MeasurementMGDLSensor(coordinator, index)
-                if custom_unit == MG_DL
-                else MeasurementMMOLSensor(coordinator, index)
-            ),
+            MeasurementSensor(coordinator, index, unit),
             TrendSensor(coordinator, index),
             ApplicationTimestampSensor(coordinator, index),
             ExpirationTimestampSensor(coordinator, index),
@@ -93,6 +79,7 @@ class LibreLinkSensorBase(LibreLinkDevice):
 
     @property
     def unique_id(self):
+        """Return the unique id of the sensor."""
         return f"{self.patientId} {self.name}".replace(" ", "_").lower()
 
 
@@ -110,66 +97,56 @@ class TrendSensor(LibreLinkSensor):
 
     @property
     def name(self):
+        """Return the name of the sensor."""
         return "Trend"
 
     @property
     def native_value(self):
-        return GLUCOSE_TREND_MESSAGE[
-            (self._c_data["glucoseMeasurement"]["TrendArrow"]) - 1
-        ]
+        """Return the native value of the sensor."""
+        return GLUCOSE_TREND_MESSAGE[(self._c_data["glucoseMeasurement"]["TrendArrow"])]
 
     @property
     def icon(self):
         """Return the icon for the frontend."""
-        return GLUCOSE_TREND_ICON[
-            (self._c_data["glucoseMeasurement"]["TrendArrow"]) - 1
-        ]
+        return GLUCOSE_TREND_ICON[(self._c_data["glucoseMeasurement"]["TrendArrow"])]
 
 
-class MeasurementMGDLSensor(TrendSensor, LibreLinkSensor):
+class MeasurementSensor(TrendSensor, LibreLinkSensor):
     """Glucose Measurement Sensor class."""
+
+    def __init__(
+        self, coordinator, coordinator_data_index, unit: UnitOfMeasurement
+    ) -> None:
+        """Initialize the sensor class."""
+        super().__init__(coordinator, coordinator_data_index)
+        self.unit = unit
 
     @property
     def state_class(self):
+        """Return the state class of the sensor."""
         return SensorStateClass.MEASUREMENT
 
     @property
     def name(self):
+        """Return the name of the sensor."""
         return "Measurement"
 
     @property
     def native_value(self):
         """Return the native value of the sensor."""
-        return self._c_data["glucoseMeasurement"]["ValueInMgPerDl"]
+        return self.unit.from_mg_per_dl(
+            self._c_data["glucoseMeasurement"]["ValueInMgPerDl"]
+        )
 
     @property
     def suggested_display_precision(self):
         """Return the suggested precision of the sensor."""
-        return 0
+        return self.unit.suggested_display_precision
 
     @property
     def unit_of_measurement(self):
         """Return the unit of measurement of the sensor."""
-        return MG_DL
-
-
-class MeasurementMMOLSensor(MeasurementMGDLSensor):
-    """Glucose Measurement Sensor class."""
-
-    @property
-    def suggested_display_precision(self):
-        """Return the suggested precision of the sensor."""
-        return 1
-
-    @property
-    def native_value(self):
-        """Return the native value of the sensor."""
-        return super().native_value / MMOL_DL_TO_MG_DL
-
-    @property
-    def unit_of_measurement(self):
-        """Return the unit of measurement of the sensor."""
-        return MMOL_L
+        return self.unit_of_measurement
 
 
 class TimestampSensor(LibreLinkSensor):
@@ -177,6 +154,7 @@ class TimestampSensor(LibreLinkSensor):
 
     @property
     def device_class(self):
+        """Return the device class of the sensor."""
         return SensorDeviceClass.TIMESTAMP
 
 
@@ -185,6 +163,7 @@ class ApplicationTimestampSensor(TimestampSensor):
 
     @property
     def name(self):
+        """Return the name of the sensor."""
         return "Application Timestamp"
 
     @property
@@ -218,6 +197,7 @@ class ExpirationTimestampSensor(ApplicationTimestampSensor):
 
     @property
     def name(self):
+        """Return the name of the sensor."""
         return "Expiration Timestamp"
 
     @property
@@ -231,6 +211,7 @@ class LastMeasurementTimestampSensor(TimestampSensor):
 
     @property
     def name(self):
+        """Return the name of the sensor."""
         return "Last Measurement Timestamp"
 
     @property
