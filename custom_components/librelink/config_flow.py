@@ -2,19 +2,24 @@
 
 from __future__ import annotations
 
-import logging
-
 import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_PASSWORD, CONF_UNIT_OF_MEASUREMENT, CONF_USERNAME
-from homeassistant.helpers import selector
+from homeassistant.const import (
+    CONF_PASSWORD,
+    CONF_UNIT_OF_MEASUREMENT,
+    CONF_URL,
+    CONF_USERNAME,
+)
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 from homeassistant.helpers.selector import (
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
     SelectSelectorMode,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
 )
 
 from .api import (
@@ -23,11 +28,8 @@ from .api import (
     LibreLinkAPIConnectionError,
     LibreLinkAPIError,
 )
-from .const import BASE_URL_LIST, COUNTRY, COUNTRY_LIST, DOMAIN, LOGGER
+from .const import BASE_URL_LIST, CONF_PATIENT_ID, DOMAIN, LOGGER
 from .units import UNITS_OF_MEASUREMENT
-
-# GVS: Init logger
-_LOGGER = logging.getLogger(__name__)
 
 
 class LibreLinkFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
@@ -45,14 +47,15 @@ class LibreLinkFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 username = user_input[CONF_USERNAME]
                 password = user_input[CONF_PASSWORD]
-                base_url = BASE_URL_LIST[user_input[COUNTRY]]
+                base_url = user_input[CONF_URL]
 
                 client = LibreLinkAPI(
                     base_url=base_url, session=async_create_clientsession(self.hass)
                 )
                 await client.async_login(username, password)
 
-                self.client = client
+                self.patients = await client.async_get_data()
+                self.basic_info = user_input
 
                 return await self.async_step_patient()
             except LibreLinkAPIAuthenticationError as e:
@@ -70,59 +73,62 @@ class LibreLinkFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_USERNAME,
-                        default=(user_input or {}).get(CONF_USERNAME),
-                    ): selector.TextSelector(
-                        selector.TextSelectorConfig(
-                            type=selector.TextSelectorType.TEXT
-                        ),
-                    ),
-                    vol.Required(CONF_PASSWORD): selector.TextSelector(
-                        selector.TextSelectorConfig(
-                            type=selector.TextSelectorType.PASSWORD
-                        ),
+                        CONF_USERNAME, default=(user_input or {}).get(CONF_USERNAME)
+                    ): TextSelector(
+                        TextSelectorConfig(type=TextSelectorType.TEXT),
                     ),
                     vol.Required(
-                        COUNTRY,
-                        description="Country",
-                        default=(COUNTRY_LIST[0]),
-                    ): vol.In(COUNTRY_LIST),
+                        CONF_PASSWORD, default=(user_input or {}).get(CONF_PASSWORD)
+                    ): TextSelector(
+                        TextSelectorConfig(type=TextSelectorType.PASSWORD),
+                    ),
+                    vol.Required(CONF_URL): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[
+                                SelectOptionDict(label=k, value=v)
+                                for k, v in BASE_URL_LIST.items()
+                            ],
+                            mode=SelectSelectorMode.DROPDOWN,
+                        ),
+                    ),
                 }
             ),
             errors=_errors,
         )
 
     async def async_step_patient(self, user_input=None):
-        if user_input and "PATIENT_ID" in user_input:
-            return self.async_create_entry(
-                title=user_input[CONF_USERNAME],
-                data=user_input,
+        """Handle a flow to select specific patient."""
+        if user_input is not None:
+            user_input |= self.basic_info
+
+            patient = {patient.id: patient for patient in self.patients}.get(
+                user_input[CONF_PATIENT_ID]
             )
 
-        data = await self.client.async_get_data()
-
-        c1 = SelectSelectorConfig(
-            options=[
-                SelectOptionDict(
-                    value=patient["patientId"],
-                    label=f'{patient['firstName']} {patient["lastName"]}',
-                )
-                for patient in data
-            ]
-        )
-        c2 = SelectSelectorConfig(
-            options=[
-                SelectOptionDict(value=k, label=u.unit_of_measurement)
-                for k, u in UNITS_OF_MEASUREMENT.items()
-            ]
-        )
+            return self.async_create_entry(
+                title=f"{patient.name} (via {user_input[CONF_USERNAME]})",
+                data=user_input,
+            )
 
         return self.async_show_form(
             step_id="patient",
             data_schema=vol.Schema(
                 {
-                    vol.Required("PATIENT_ID"): SelectSelector(c1),
-                    vol.Required(CONF_UNIT_OF_MEASUREMENT): SelectSelector(c2),
+                    vol.Required(CONF_PATIENT_ID): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[
+                                SelectOptionDict(value=patient.id, label=patient.name)
+                                for patient in self.patients
+                            ]
+                        )
+                    ),
+                    vol.Required(CONF_UNIT_OF_MEASUREMENT): SelectSelector(
+                        SelectSelectorConfig(
+                            options=[
+                                u.unit_of_measurement for u in UNITS_OF_MEASUREMENT
+                            ]
+                        )
+                    ),
                 }
             ),
         )

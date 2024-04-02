@@ -2,14 +2,94 @@
 
 from __future__ import annotations
 
-import logging
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 import socket
 
 import aiohttp
 
-from .const import API_TIME_OUT_SECONDS, CONNECTION_URL, LOGIN_URL, PRODUCT, VERSION_APP
+from .const import (
+    API_TIME_OUT_SECONDS,
+    CONNECTION_URL,
+    LOGGER,
+    LOGIN_URL,
+    PRODUCT,
+    VERSION_APP,
+)
 
-_LOGGER = logging.getLogger(__name__)
+
+@dataclass
+class Target:
+    """Target Glucose data."""
+
+    high: int
+    low: int
+
+
+@dataclass
+class Measurement:
+    """Measurement data."""
+
+    value: int
+    timestamp: datetime
+    trend: int
+
+
+@dataclass
+class LibreLinkDevice:
+    """LibreLink device data."""
+
+    serial_number: str
+    application_timestamp: datetime | None
+
+    @property
+    def expiration_timestamp(self):
+        """Return the expiration timestamp of the sensor."""
+        return self.application_timestamp + timedelta(days=14)
+
+
+@dataclass
+class Patient:
+    """Patient data."""
+
+    id: str
+    first_name: str
+    last_name: str
+    measurement: Measurement
+    target: Target
+    device: LibreLinkDevice
+
+    @property
+    def name(self):
+        """Return the full name of the patient."""
+        return f"{self.first_name} {self.last_name}"
+
+    @classmethod
+    def from_api_response_data(cls, data):
+        """Create a Patient object from the API response data."""
+        return cls(
+            id=data["patientId"],
+            first_name=data["firstName"],
+            last_name=data["lastName"],
+            measurement=Measurement(
+                value=data["glucoseMeasurement"]["ValueInMgPerDl"],
+                timestamp=datetime.strptime(
+                    data["glucoseMeasurement"]["FactoryTimestamp"],
+                    "%m/%d/%Y %I:%M:%S %p",
+                ).replace(tzinfo=UTC),
+                trend=data["glucoseMeasurement"]["TrendArrow"],
+            ),
+            target=Target(
+                high=data["targetHigh"],
+                low=data["targetLow"],
+            ),
+            device=LibreLinkDevice(
+                serial_number=f'{data["sensor"]["pt"]}{data['sensor']['sn']}',
+                application_timestamp=datetime.fromtimestamp(
+                    data["sensor"]["a"], tz=UTC
+                ),
+            ),
+        )
 
 
 class LibreLinkAPIError(Exception):
@@ -44,16 +124,18 @@ class LibreLinkAPI:
     async def async_get_data(self):
         """Get data from the API."""
         response = await self._call_api(url=CONNECTION_URL)
-        _LOGGER.debug("Return API Status:%s ", response["status"])
+        LOGGER.debug("Return API Status:%s ", response["status"])
         # API status return 0 if everything goes well.
         if response["status"] != 0:
-            return response  # to be used for debugging in status not ok
+            raise LibreLinkAPIConnectionError()
 
-        patients = response["data"]
-        _LOGGER.debug(
+        patients = [
+            Patient.from_api_response_data(patient) for patient in response["data"]
+        ]
+
+        LOGGER.debug(
             "Number of patients : %s and patient list %s", len(patients), patients
         )
-
         self._token = response["ticket"]["token"]
 
         return patients
@@ -65,7 +147,7 @@ class LibreLinkAPI:
             data={"email": username, "password": password},
             authenticated=False,
         )
-        _LOGGER.debug("Login status : %s", response["status"])
+        LOGGER.debug("Login status : %s", response["status"])
         if response["status"] == 2:
             raise LibreLinkAPIAuthenticationError()
 
@@ -93,7 +175,7 @@ class LibreLinkAPI:
                 json=data,
                 timeout=aiohttp.ClientTimeout(total=API_TIME_OUT_SECONDS),
             )
-            _LOGGER.debug("response.status: %s", response.status)
+            LOGGER.debug("response.status: %s", response.status)
             if response.status in (401, 403):
                 raise LibreLinkAPIAuthenticationError()
             response.raise_for_status()

@@ -1,30 +1,17 @@
 """Constants for librelink."""
 
 from logging import Logger, getLogger
+from typing import Final
 
 LOGGER: Logger = getLogger(__package__)
 
-NAME = "LibreLink"
-DOMAIN = "librelink"
-VERSION = "1.2.3"
-ATTRIBUTION = "Data provided by https://libreview.com"
-LOGIN_URL = "/llu/auth/login"
-CONNECTION_URL = "/llu/connections"
-COUNTRY = "Country"
-COUNTRY_LIST = [
-    "Global",
-    "Arab Emirates",
-    "Asia Pacific",
-    "Australia",
-    "Canada",
-    "Germany",
-    "Europe",
-    "France",
-    "Japan",
-    "Russia",
-    "United States",
-]
-BASE_URL_LIST = {
+NAME: Final = "LibreLink"
+DOMAIN: Final = "librelink"
+VERSION: Final = "1.2.3"
+ATTRIBUTION: Final = "Data provided by https://libreview.com"
+LOGIN_URL: Final = "/llu/auth/login"
+CONNECTION_URL: Final = "/llu/connections"
+BASE_URL_LIST: Final = {
     "Global": "https://api.libreview.io",
     "Arab Emirates": "https://api-ae.libreview.io",
     "Asia Pacific": "https://api-ap.libreview.io",
@@ -37,17 +24,17 @@ BASE_URL_LIST = {
     "Russia": "https://api.libreview.ru",
     "United States": "https://api-us.libreview.io",
 }
-PRODUCT = "llu.android"
-VERSION_APP = "4.7"
-GLUCOSE_VALUE_ICON = "mdi:diabetes"
-GLUCOSE_TREND_ICON = {
+PRODUCT: Final = "llu.android"
+VERSION_APP: Final = "4.7"
+GLUCOSE_VALUE_ICON: Final = "mdi:diabetes"
+GLUCOSE_TREND_ICON: Final = {
     1: "mdi:arrow-down-bold-box",
     2: "mdi:arrow-bottom-right-bold-box",
     3: "mdi:arrow-right-bold-box",
     4: "mdi:arrow-top-right-bold-box",
     5: "mdi:arrow-up-bold-box",
 }
-GLUCOSE_TREND_MESSAGE = {
+GLUCOSE_TREND_MESSAGE: Final = {
     1: "Decreasing fast",
     2: "Decreasing",
     3: "Stable",
@@ -55,5 +42,8 @@ GLUCOSE_TREND_MESSAGE = {
     5: "Increasing fast",
 }
 
-REFRESH_RATE_MIN = 1
-API_TIME_OUT_SECONDS = 20
+
+CONF_PATIENT_ID: Final = "patient_id"
+
+REFRESH_RATE_MIN: Final = 1
+API_TIME_OUT_SECONDS: Final = 20

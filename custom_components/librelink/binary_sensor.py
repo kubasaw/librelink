@@ -7,10 +7,12 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
+from .const import CONF_PATIENT_ID, DOMAIN
+from .coordinator import LibreLinkDataUpdateCoordinator
 from .sensor import LibreLinkSensorBase
 
 
@@ -21,18 +23,15 @@ async def async_setup_entry(
 ):
     """Set up the binary_sensor platform."""
 
-    coordinator = hass.data[DOMAIN][config_entry.entry_id]
+    coordinator: LibreLinkDataUpdateCoordinator = hass.data[DOMAIN][
+        config_entry.data[CONF_USERNAME]
+    ]
 
-    # to manage multiple patients, the API return an array of patients in "data". So we loop in the array
-    # and create as many devices and sensors as we do have patients.
+    pid = config_entry.data[CONF_PATIENT_ID]
+
     sensors = [
-        sensor
-        # Loop through list of patients which are under "Data"
-        for index, _ in enumerate(coordinator.data)
-        for sensor in [
-            HighSensor(coordinator, index),
-            LowSensor(coordinator, index),
-        ]
+        HighSensor(coordinator, pid),
+        LowSensor(coordinator, pid),
     ]
     async_add_entities(sensors)
 
@@ -44,11 +43,6 @@ class LibreLinkBinarySensor(LibreLinkSensorBase, BinarySensorEntity):
     def device_class(self) -> str:
         """Return the class of this device."""
         return BinarySensorDeviceClass.SAFETY
-
-    @property
-    def _current_glucose(self) -> int:
-        """Return the current glucose value."""
-        return self._c_data["glucoseMeasurement"]["ValueInMgPerDl"]
 
 
 class HighSensor(LibreLinkBinarySensor):
@@ -62,7 +56,7 @@ class HighSensor(LibreLinkBinarySensor):
     @property
     def is_on(self) -> bool:
         """Return true if the binary_sensor is on."""
-        return self._current_glucose >= self._c_data["targetHigh"]
+        return self._data.measurement.value >= self._data.target.high
 
 
 class LowSensor(LibreLinkBinarySensor):
@@ -76,4 +70,4 @@ class LowSensor(LibreLinkBinarySensor):
     @property
     def is_on(self) -> bool:
         """Return true if the binary_sensor is on."""
-        return self._current_glucose <= self._c_data["targetLow"]
+        return self._data.measurement.value <= self._data.target.low
