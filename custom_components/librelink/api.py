@@ -170,7 +170,7 @@ class LibreLinkAPI:
         if authenticated:
             headers |= {
                 'Authorization': f'Bearer {self._token}',
-                'AccountId': sha256(self._account_id.encode()).hexdigest()
+                'Account-Id': sha256(self._account_id.encode()).hexdigest()
             }
 
         call_method = self._session.post if data else self._session.get
