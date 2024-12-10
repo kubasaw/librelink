@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 import socket
 
 import aiohttp
@@ -118,6 +119,7 @@ class LibreLinkAPI:
     def __init__(self, base_url: str, session: aiohttp.ClientSession) -> None:
         """Initialize the API client."""
         self._token = None
+        self._account_id = None
         self._session = session
         self.base_url = base_url
 
@@ -152,6 +154,7 @@ class LibreLinkAPI:
             raise LibreLinkAPIAuthenticationError()
 
         self._token = response["data"]["authTicket"]["token"]
+        self._account_id = response["data"]["user"]["id"]
 
     async def _call_api(
         self,
@@ -165,7 +168,10 @@ class LibreLinkAPI:
             "version": VERSION_APP,
         }
         if authenticated:
-            headers["Authorization"] = "Bearer " + self._token
+            headers |= {
+                'Authorization': f'Bearer {self._token}',
+                'AccountId': sha256(self._account_id.encode()).hexdigest()
+            }
 
         call_method = self._session.post if data else self._session.get
         try:
